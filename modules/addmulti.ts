@@ -11,9 +11,9 @@ import fs from 'fs';
 const ADD = STRINGS.add;
 
 module.exports = {
-    name: "add",
-    description: ADD.DESCRIPTION,
-    extendedDescription: ADD.EXTENDED_DESCRIPTION,
+    name: "addmulti",
+    description: "Adds multiple numbers to a group",
+    extendedDescription: "Give a list of numbers to add",
     demo: { isEnabled: false },
     async handle(client: Client, chat: proto.IWebMessageInfo, BotsApp: BotsApp, args: string[]): Promise<void> {
         try {
@@ -25,7 +25,11 @@ module.exports = {
                 ).catch(err => inputSanitization.handleError(err, client, BotsApp));
                 return;
             }
+
             await client.getGroupMetaData(BotsApp.chatId, BotsApp);
+            let members = {};
+            BotsApp.groupMembers.forEach(m => members[m.id] = true);
+            
             if (!BotsApp.isBotGroupAdmin) {
                 client.sendMessage(
                     BotsApp.chatId,
@@ -34,7 +38,7 @@ module.exports = {
                 ).catch(err => inputSanitization.handleError(err, client, BotsApp));
                 return;
             }
-            if (!args[0]) {
+            if (args.length === 0) {
                 client.sendMessage(
                     BotsApp.chatId,
                     ADD.NO_ARG_ERROR,
@@ -42,79 +46,57 @@ module.exports = {
                 ).catch(err => inputSanitization.handleError(err, client, BotsApp));
                 return;
             }
-            let number;
-            if (parseInt(args[0]) === NaN || args[0][0] === "+" || args[0].length < 10) {
-                client.sendMessage(
-                    BotsApp.chatId,
-                    ADD.NUMBER_SYNTAX_ERROR,
-                    MessageType.text
-                ).catch(err => inputSanitization.handleError(err, client, BotsApp));
-                return;
-            }
-            if (args[0].length == 10 && !(parseInt(args[0]) === NaN)) {
-                number = CONFIG.COUNTRY_CODE + args[0];
-            } else {
-                number = args[0];
-            }
-            const [exists] = await client.sock.onWhatsApp(
-                number + "@s.whatsapp.net"
-            );
-            if (!(exists)) {
-                client.sendMessage(
-                    BotsApp.chatId,
-                    format(ADD.NOT_ON_WHATSAPP, number),
-                    MessageType.text
-                ).catch(err => inputSanitization.handleError(err, client, BotsApp));
-                return;
-            }
-            const response: any = await client.sock.groupParticipantsUpdate(BotsApp.chatId, [number + "@s.whatsapp.net"], 'add');
 
-            // if (response[number + "@c.us"] == 408) {
-            //     client.sendMessage(
-            //         BotsApp.chatId,
-            //         ADD.NO_24HR_BAN,
-            //         MessageType.text
-            //     ).catch(err => inputSanitization.handleError(err, client, BotsApp));
-            //     return;
-            // } else if (response[number + "@c.us"] == 403) {
-            //     for (const index in response.participants) {
-            //         if ((number + "@c.us") in response.participants[index]) {
-            //             var code = response.participants[index][number + "@c.us"].invite_code;
-            //             var tom = response.participants[index][number + "@c.us"].invite_code_exp;
-            //         }
-            //     }
-            //     var invite = {
-            //         caption: "```Hi! You have been invited to join this WhatsApp group by BotsApp!```\n\n🔗https://mybotsapp.com",
-            //         groupJid: BotsApp.groupId,
-            //         groupName: BotsApp.groupName,
-            //         inviteCode: code,
-            //         inviteExpiration: tom,
-            //         jpegThumbnail: fs.readFileSync('./images/BotsApp_invite.jpeg')
-            //     }
-            //     await client.sendMessage(
-            //         number + "@s.whatsapp.net",
-            //         invite,
-            //         MessageType.groupInviteMessage
-            //     );
-            //     client.sendMessage(
-            //         BotsApp.chatId,
-            //         ADD.PRIVACY,
-            //         MessageType.text
-            //     ).catch(err => inputSanitization.handleError(err, client, BotsApp));
-            //     return;
-            // } else if (response[number + "@c.us"] == 409) {
-            //     client.sendMessage(
-            //         BotsApp.chatId,
-            //         ADD.ALREADY_MEMBER,
-            //         MessageType.text
-            //     ).catch(err => inputSanitization.handleError(err, client, BotsApp));
-            //     return;
-            // }
-            client.sendMessage(
+            let ok : string[] = [];
+            args.forEach(async n => {
+                if (parseInt(n) === NaN || n[0] === "+" || n.length < 10) {
+                    client.sendMessage(
+                        BotsApp.chatId,
+                        ADD.NUMBER_SYNTAX_ERROR,
+                        MessageType.text
+                    ).catch(err => inputSanitization.handleError(err, client, BotsApp));
+                    return;
+                }
+                let number;
+                if (n.length === 10 && !(parseInt(n) === NaN)) {
+                    number = CONFIG.COUNTRY_CODE + n;
+                } else {
+                    number = n;
+                }
+                number += "@s.whatsapp.net";
+                if (!members[number]) {
+                    ok.push(number);
+                    members[number] = false;
+                }
+            });
+
+            const response: any = await client.sock.groupParticipantsUpdate(BotsApp.chatId, ok, 'add');
+
+            await client.getGroupMetaData(BotsApp.chatId, BotsApp);
+            BotsApp.groupMembers.forEach(m => members[m.id] = true);
+
+            let done = ok.filter(m => members[m] === true);
+            await client.sendMessage(
                 BotsApp.chatId,
-                "```" + number + ADD.SUCCESS + "```",
+                "*Added* \n```" + done.map(m => '+'+m.split('@')[0]).join('\n') + "```",
                 MessageType.text
-            );
+            )
+
+            let notok = ok.filter(m => members[m] === false);
+            notok.forEach(async n => {
+                const code = await client.sock.groupInviteCode(BotsApp.chatId);
+                await client.sendMessage(
+                    n,
+                    "```Hi! You have been invited to join this WhatsApp group!``` https://chat.whatsapp.com/"+code,
+                    MessageType.text
+                );
+            });
+            if (notok.length !== 0) 
+                await client.sendMessage(
+                    BotsApp.chatId,
+                    "*Invited* \n```" + notok.map(m => '+'+m.split('@')[0]).join('\n') + "```",
+                    MessageType.text
+                );
         } catch (err) {
             if (err.status == 400) {
                 await inputSanitization.handleError(
