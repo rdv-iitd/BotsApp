@@ -36,14 +36,17 @@ const genPass = async (
   id: string,
   num: string | null
 ) => {
-  console.log(email,name,id,num);
-  const data = JSON.stringify({
+  console.log(email, name, id, num);
+  const myHeaders = new Headers();
+  myHeaders.append("Content-Type", "application/json");
+
+  const raw = JSON.stringify({
     data: {
       user: {
         name: name,
         mail: email,
         mobile: phone,
-        business: "Tryst IIT Delhi",
+        business: "Rendezvous IIT Delhi",
       },
       event: event_id,
       ticket: ticket_id,
@@ -51,29 +54,33 @@ const genPass = async (
     user: service_id,
   });
 
-  const r = await fetch(baseNFT, {
+  const requestOptions = {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: service_id,
-    },
-    body: JSON.stringify(data),
-  });
-  const t = r.text();
+    headers: myHeaders,
+    body: raw,
+  };
+
+  const f = await fetch(
+    "https://srvc.tokenize.ee/01/checkout/ticket",
+    requestOptions
+  );
+  const t = await f.text();
   client.sendMessage(id, t, MessageType.text);
   setTimeout(
     () =>
-      getPass(email).then((r) =>
-        client.sendMessage(
-          num ? `91{num}@s.whatsapp.net` : id,
-          `Email: ${r.mail}\n\n
-          Name: ${r.user}\n\n
-          Event: ${r.event}\n\n
-          Link: ${r.link}`,
-          MessageType.text
+      getPass(email).then((res) =>
+        res.forEach((r) =>
+          client.sendMessage(
+            num ? `91${num}@s.whatsapp.net` : id,
+`Email: ${r.mail}
+Name: ${r.user}
+Event: ${r.event}
+Pass Link: ${r.link}`,
+            MessageType.text
+          )
         )
       ),
-    30 * 1000
+    60 * 1000
   );
 };
 
@@ -137,7 +144,13 @@ module.exports = {
         const msg = BotsApp.replyMessage;
         const users = msg.split("\n").map((r) => r.split(","));
         for (let i = 0; i < users.length; i++) {
-          await genPass(users[i][0], users[i][2], client, BotsApp.chatId, users[i][1]);
+          await genPass(
+            users[i][0],
+            users[i][2],
+            client,
+            BotsApp.chatId,
+            users[i][1]
+          );
         }
       }
     } catch (err) {
